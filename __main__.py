@@ -1,3 +1,4 @@
+import pathlib
 import argparse
 
 from api import send, receive
@@ -26,11 +27,16 @@ def main():
     arguments = get_cli_args()
     jobs = arguments.jobs
     buff_size = arguments.buff_size
+    host_ip, host_port = arguments.host.split(':')
+
     if arguments.input:
-        print(f'Input file: {arguments.input}')
-        send.send_file(arguments.input, arguments.host, buff_size, jobs)
+        print(f'> Input file: {arguments.input}')
+        input_path = pathlib.Path(arguments.input).resolve()
+        send.send_file(input_path, host_ip, host_port, buff_size, jobs)
+
     if arguments.output:
-        print(f'Output file: {arguments.output}')
+        print(f'> Output file: {arguments.output}')
+        print('Doing nothing...')
 
 
 if __name__ == '__main__':

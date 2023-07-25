@@ -6,6 +6,8 @@ name = "pypi"
 [packages]
 tqdm = "*"
 argparse = "*"
+eventlet = "*"
+cryptography = "*"
 
 [dev-packages]
 ipython = "*"
