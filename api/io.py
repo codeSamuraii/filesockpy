@@ -1,3 +1,5 @@
+import sys
+
 import eventlet
 import socket
 import logging
@@ -58,16 +60,45 @@ class FileQueue:
             self.pool.waitall()
         finally:
             input_io.close()
-
-
-
-class FileSend(FileQueue):
-    def __init__(self, file_path: pathlib.Path, host: str, port: int, buff_size: int = 1024, n_jobs: int = 2):
-        super().__init__(file_path, buff_size, n_jobs)
-
+    
     @staticmethod
-    def _send_queue(queue: eventlet.Queue, s: socket.socket):
-        FileSend._read_queue(queue, s.sendall)
+    def _enqueue_and_callback(input_queue: eventlet.Queue, callback: callable):
+        while True:
+            item = input_queue.get_nowait()
+            if not item:
+                break
+            else:
+                callback(item)
+            
+            eventlet.sleep()
+    
+    def enqueue_and_callback(self, callback: callable):
+        jobs = {
+            self.pool.spawn(self._enqueue_and_callback, self.queue, callback) for _ in range(self.n_jobs)
+        }
+        self.pool.waitall()
+    
+    @staticmethod
+    def _receive_and_callback(input_socket: socket.socket, callback: callable, buff_size: int):
+        while True:
+            bytes_read = input_socket.recv(buff_size)
+            if not bytes_read:
+                break
+            else:
+                callback(bytes_read)
+            
+            eventlet.sleep()
+    
+    def receive_and_callback(self, input_socket: socket.socket, callback: callable):
+        from eventlet import debug as e_debug
+        e_debug.hub_prevent_multiple_readers(False)
+        jobs = {
+            self.pool.spawn(self._receive_and_callback, input_socket, callback, self.buff_size) for _ in range(self.n_jobs)
+        }
+        self.pool.waitall()
+    
+    def receive_and_log(self, input_socket: socket.socket):
+        self.receive_and_callback(input_socket, lambda x: logging.debug(f"received {len(x)} bytes"))
 
 
 if __name__ == '__main__':
@@ -79,8 +110,18 @@ if __name__ == '__main__':
     if not eventlet.patcher.is_monkey_patched(socket):
         exit()
     s = socket.socket()
-    s.connect(('127.0.0.1', 9898))
 
-    fq = FileQueue(input_path, n_jobs=n_jobs)
-    fq.read_and_send(s)
-    fq.pool.waitall()
+    if sys.argv[1] == '-l':
+        s.bind(('0.0.0.0', 9898))
+        s.listen(5)
+        while True:
+            conn, addr = s.accept()
+            log.debug(f"Connection from {addr}")
+            fq = FileQueue(input_path, n_jobs=n_jobs)
+            fq.receive_and_log(conn)
+            fq.pool.waitall()
+    else:
+        s.connect(('127.0.0.1', 9898))
+        fq = FileQueue(input_path, n_jobs=n_jobs)
+        fq.read_and_send(s)
+        fq.pool.waitall()
