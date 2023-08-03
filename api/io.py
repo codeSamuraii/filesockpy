@@ -5,9 +5,10 @@ import socket
 import logging
 import pathlib
 import io
+from datetime import datetime, timedelta
 
 log = logging.getLogger(__name__)
-log.setLevel(logging.DEBUG)
+log.setLevel(logging.INFO)
 
 
 class FileQueue:
@@ -32,9 +33,9 @@ class FileQueue:
     def read_and_queue(self):
         input_io = self.input.open('rb', buffering=self.buff_size)
         try:
-            jobs = {
-                self.pool.spawn(self._read_and_queue, input_io, self.queue, self.buff_size) for _ in range(self.n_jobs)
-            }
+            for _ in range(self.n_jobs):
+                self.pool.spawn_n(self._read_and_queue, input_io, self.queue, self.buff_size)
+
             self.pool.waitall()
         finally:
             input_io.close()
@@ -54,9 +55,9 @@ class FileQueue:
     def read_and_send(self, output_socket: socket.socket):
         input_io = self.input.open('rb', buffering=self.buff_size)
         try:
-            jobs = {
-                self.pool.spawn(self._read_and_send, input_io, output_socket, self.buff_size) for _ in range(self.n_jobs)
-            }
+            for _ in range(self.n_jobs):
+                self.pool.spawn_n(self._read_and_send, input_io, output_socket, self.buff_size)
+
             self.pool.waitall()
         finally:
             input_io.close()
@@ -73,9 +74,9 @@ class FileQueue:
             eventlet.sleep()
     
     def enqueue_and_callback(self, callback: callable):
-        jobs = {
-            self.pool.spawn(self._enqueue_and_callback, self.queue, callback) for _ in range(self.n_jobs)
-        }
+        for _ in range(self.n_jobs):
+            self.pool.spawn_n(self._enqueue_and_callback, self.queue, callback)
+
         self.pool.waitall()
     
     @staticmethod
@@ -90,11 +91,9 @@ class FileQueue:
             eventlet.sleep()
     
     def receive_and_callback(self, input_socket: socket.socket, callback: callable):
-        from eventlet import debug as e_debug
-        e_debug.hub_prevent_multiple_readers(False)
-        jobs = {
-            self.pool.spawn(self._receive_and_callback, input_socket, callback, self.buff_size) for _ in range(self.n_jobs)
-        }
+        for _ in range(self.n_jobs):
+            self.pool.spawn_n(self._receive_and_callback, input_socket, callback, self.buff_size)
+
         self.pool.waitall()
     
     def receive_and_log(self, input_socket: socket.socket):
@@ -103,7 +102,9 @@ class FileQueue:
 
 if __name__ == '__main__':
     eventlet.monkey_patch()
-    logging.basicConfig(level=logging.DEBUG)
+    from eventlet import debug as eventlet_debug
+    eventlet_debug.hub_prevent_multiple_readers(False)
+    logging.basicConfig(level=logging.INFO)
 
     input_path = pathlib.Path('data.bin').resolve()
     n_jobs = 4
@@ -114,14 +115,20 @@ if __name__ == '__main__':
     if sys.argv[1] == '-l':
         s.bind(('0.0.0.0', 9898))
         s.listen(5)
-        while True:
-            conn, addr = s.accept()
-            log.debug(f"Connection from {addr}")
-            fq = FileQueue(input_path, n_jobs=n_jobs)
-            fq.receive_and_log(conn)
-            fq.pool.waitall()
+
+        conn, addr = s.accept()
+        log.info(f"Connection from {addr}")
+        start = datetime.now()
+        fq = FileQueue(input_path, n_jobs=n_jobs)
+        fq.receive_and_log(conn)
+        fq.pool.waitall()
+        stop = datetime.now()
+        log.info(f"Finished in {(stop - start).microseconds / 1000} ms")
+        conn.close()
+        s.close()
     else:
         s.connect(('127.0.0.1', 9898))
         fq = FileQueue(input_path, n_jobs=n_jobs)
         fq.read_and_send(s)
         fq.pool.waitall()
+        s.close()
