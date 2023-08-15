@@ -41,24 +41,23 @@ def main():
         logging.basicConfig(level=logging.DEBUG)
         log.setLevel(logging.DEBUG)
     else:
-        logging.basicConfig(level=logging.WARNING)
-        log.setLevel(logging.WARNING)
+        logging.basicConfig(level=logging.INFO)
+        log.setLevel(logging.INFO)
 
     if arguments.input:
         input_path = pathlib.Path(arguments.input).resolve()
-        print(f'> Input file: {input_path}\n- Size: {input_path.stat().st_size}\n- Jobs: {jobs}\n- Buffer size: {buff_size}')
-        clear_pgbr, progress_callback = misc.create_progressbar(arguments.verbose, input_path)
-        duration = send.send_file(input_path, host_ip, host_port, buff_size, jobs, progress_callback)
-        clear_pgbr()
-        print(f'> Duration: {duration} ms')
+        size, s_size = input_path.stat().st_size, misc.sizeof_fmt(input_path.stat().st_size)
+        print(f'> Input file: {input_path}\n- Size: {s_size}\n- Jobs: {jobs}\n- Buffer size: {buff_size}')
+        duration = send.send_file(input_path, host_ip, host_port, buff_size, jobs)
+        rate = misc.compute_rate(size, duration)
+        print(f'> Duration: {duration} — Rate: {rate:.2f} MiB/s')
 
     if arguments.output:
         output_path = pathlib.Path(arguments.output).resolve()
-        print(f'> Output file: {output_path}\n- Size: {output_path.stat().st_size}\n- Jobs: {jobs}\n- Buffer size: {buff_size}')
-        clear_pgbr, progress_callback = misc.create_progressbar(arguments.verbose, output_path)
-        duration = receive.receive_file(output_path, host_port, buff_size, jobs, progress_callback)
-        clear_pgbr()
-        print(f'> Duration: {duration} ms')
+        print(f'> Output file: {output_path}')
+        size, duration = receive.receive_file(output_path, host_port)
+        rate = misc.compute_rate(size, duration)
+        print(f'> Duration: {duration} — Rate: {rate:.2f} MiB/s')
 
 if __name__ == '__main__':
     main()
