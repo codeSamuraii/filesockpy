@@ -1,4 +1,4 @@
 *.pyc
 __pycache__/
 .DS_Store
-data/big.bin
+api/data/big.bin
